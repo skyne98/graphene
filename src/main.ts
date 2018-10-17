@@ -1,19 +1,29 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import * as argv from "commander";
 import * as fs from "fs";
 import * as llvm from "llvm-node";
 import * as path from "path";
+// @ts-ignore
+import * as SegfaultHandler from "segfault-handler";
 import * as ts from "typescript";
-import { emitLLVM } from "./codegen";
+import { emitLLVM } from "./codegen/generator";
 import { replaceExtension } from "./utils";
+
+SegfaultHandler.registerHandler("ts-llvm-crash.log");
 
 argv
   .option("--printIR", "print LLVM assembly to stdout")
   .option("--emitIR", "write LLVM assembly to file")
   .option("--emitBitcode", "write LLVM bitcode to file")
+  .option("--target [value]", "generate code for the given target")
   .parse(process.argv);
 
-main();
+try {
+  main();
+} catch (error) {
+  console.log(error.stack);
+  process.exit(1);
+}
 
 function main() {
   const files = argv.args;
@@ -30,17 +40,34 @@ function main() {
     process.exit(1);
   }
 
+  llvm.initializeAllTargetInfos();
+  llvm.initializeAllTargets();
+  llvm.initializeAllTargetMCs();
+  llvm.initializeAllAsmParsers();
+  llvm.initializeAllAsmPrinters();
+
   const llvmModule = emitLLVM(program);
 
-  if (argv.printIR) {
-    console.log(llvmModule.print());
+  if (argv.target) {
+    const targetTriple = argv.target;
+    const target = llvm.TargetRegistry.lookupTarget(targetTriple);
+    const targetMachine = target.createTargetMachine(targetTriple, "generic");
+    llvmModule.dataLayout = targetMachine.createDataLayout();
+    llvmModule.targetTriple = targetTriple;
   }
+
+  if (argv.printIR) {
+    process.stdout.write(llvmModule.print());
+  }
+
   if (argv.emitIR) {
     writeIRToFile(llvmModule, program);
   }
+
   if (argv.emitBitcode) {
     writeBitcodeToFile(llvmModule, program);
   }
+
   if (!argv.printIR && !argv.emitIR && !argv.emitBitcode) {
     writeExecutableToFile(llvmModule, program);
   }
@@ -69,16 +96,23 @@ function writeExecutableToFile(module: llvm.Module, program: ts.Program): void {
   const runtimeLibFiles = fs
     .readdirSync(runtimeLibPath)
     .filter(file => path.extname(file) === ".cpp")
-    .map(file => path.join(runtimeLibPath, file))
-    .map(file => `"${file}"`);
+    .map(file => path.join(runtimeLibPath, file));
   const bitcodeFile = writeBitcodeToFile(module, program);
   const objectFile = replaceExtension(bitcodeFile, ".o");
   const executableFile = replaceExtension(bitcodeFile, "");
   const optimizationLevel = "-O3";
 
   try {
-    execSync(`llc ${optimizationLevel} -filetype=obj "${bitcodeFile}" -o "${objectFile}"`);
-    execSync(`cc ${optimizationLevel} "${objectFile}" ${runtimeLibFiles.join(" ")} -o "${executableFile}"`);
+    execFileSync("llc", [optimizationLevel, "-filetype=obj", bitcodeFile, "-o", objectFile]);
+    execFileSync("cc", [
+      optimizationLevel,
+      objectFile,
+      ...runtimeLibFiles,
+      "-o",
+      executableFile,
+      "-std=c++11",
+      "-Werror"
+    ]);
   } finally {
     fs.unlinkSync(bitcodeFile);
     fs.unlinkSync(objectFile);

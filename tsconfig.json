@@ -1,16 +1,17 @@
 {
   "compilerOptions": {
     "target": "es6",
+    "lib": ["es2016"],
     "module": "commonjs",
     "outDir": "build",
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
     "pretty": true
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "test/*"
   ]
 }

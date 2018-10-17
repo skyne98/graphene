@@ -1,27 +1,64 @@
-// tslint:disable:no-bitwise
-
 import * as ts from "typescript";
+import { error } from "./diagnostics";
 
-// Internal utility functions from https://github.com/Microsoft/TypeScript/blob/master/src/compiler/utilities.ts
+export function isVarConst(node: ts.VariableDeclaration | ts.VariableDeclarationList): boolean {
+  return !!(ts.getCombinedNodeFlags(node) & ts.NodeFlags.Const);
+}
 
-/*! *****************************************************************************
-Copyright (c) Microsoft Corporation. All rights reserved.
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use
-this file except in compliance with the License. You may obtain a copy of the
-License at http://www.apache.org/licenses/LICENSE-2.0
+export function getPropertyIndex(name: string, type: ts.Type, checker: ts.TypeChecker): number {
+  const properties = checker.getPropertiesOfType(type);
+  const index = properties.findIndex(property => property.name === name);
 
-THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED
-WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE,
-MERCHANTABLITY OR NON-INFRINGEMENT.
+  if (index < 0) {
+    return error(`Type '${checker.typeToString(type)}' has no property '${name}'`);
+  }
 
-See the Apache Version 2.0 License for specific language governing permissions
-and limitations under the License.
-***************************************************************************** */
+  return index;
+}
 
-export function isConst(node: ts.Node): boolean {
+export function getTypeArguments(type: ts.Type) {
+  if (type.flags & ts.TypeFlags.Object) {
+    if ((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference) {
+      return (type as ts.TypeReference).typeArguments || [];
+    }
+  }
+  return [];
+}
+
+export function addTypeArguments(type: ts.Type, typeArguments: ReadonlyArray<ts.Type>): ts.TypeReference {
+  if (type.flags & ts.TypeFlags.Object) {
+    if ((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference) {
+      const typeReference = type as ts.TypeReference;
+      return { ...typeReference, typeArguments };
+    }
+  }
+
+  return error("Invalid type");
+}
+
+export function isMethodReference(expression: ts.Expression, checker: ts.TypeChecker): boolean {
   return (
-    !!(ts.getCombinedNodeFlags(node) & ts.NodeFlags.Const) ||
-    !!(ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Const)
+    ts.isPropertyAccessExpression(expression) &&
+    (checker.getTypeAtLocation(expression).symbol.flags & ts.SymbolFlags.Method) !== 0
   );
+}
+
+export function isObject(type: ts.Type): type is ts.ObjectType {
+  return !!(type.flags & ts.TypeFlags.Object);
+}
+
+export function isArray(type: ts.Type): type is ts.ObjectType {
+  return type.symbol && type.symbol.name === "Array";
+}
+
+export function isString(type: ts.Type): boolean {
+  return !!(type.flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral));
+}
+
+export function getTypeBaseName(type: ts.Type, checker: ts.TypeChecker) {
+  return type.symbol ? type.symbol.name : checker.typeToString(checker.getBaseTypeOfLiteralType(type));
+}
+
+export function isProperty(symbol: ts.Symbol): boolean {
+  return !!(symbol.flags & ts.SymbolFlags.Property);
 }

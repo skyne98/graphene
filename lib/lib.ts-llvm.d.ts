@@ -1,6 +1,11 @@
 // tslint:disable:no-empty-interface no-namespace interface-name
 
-interface Array<T> {}
+declare class Array<T> {
+  constructor();
+  readonly length: number;
+  push(value: T): void;
+  [index: number]: T;
+}
 
 interface Boolean {}
 
@@ -14,7 +19,10 @@ interface Object {}
 
 interface RegExp {}
 
-interface String {}
+interface String {
+  concat(string: string): string;
+  readonly length: number;
+}
 
 declare namespace console {
   export function log(message: string): void;
